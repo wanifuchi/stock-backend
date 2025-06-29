@@ -26,10 +26,16 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# CORS設定（開発環境用）
+# CORS設定（本番環境対応）
+origins = [
+    "http://localhost:3000",  # 開発環境
+    "http://localhost:3001",  # 開発環境
+    "https://*.vercel.app",   # Vercel本番環境（ワイルドカード）
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # Next.jsのデフォルトポート
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -49,4 +55,6 @@ async def root():
     }
 
 if __name__ == "__main__":
-    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)
+    import os
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run("app.main:app", host="0.0.0.0", port=port)
