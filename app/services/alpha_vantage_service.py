@@ -53,6 +53,43 @@ class AlphaVantageService:
             print(f"Alpha Vantage APIリクエストエラー: {str(e)}")
             return None
     
+    def search_symbol(self, keywords: str) -> List[Dict[str, str]]:
+        """
+        Alpha VantageのSYMBOL_SEARCH APIを使用して銘柄を検索
+        """
+        # キャッシュから取得を試行
+        cache_key = f"symbol_search_{keywords.lower()}"
+        cached_data = cache_service.get("search", cache_key)
+        if cached_data:
+            return cached_data
+        
+        params = {
+            'function': 'SYMBOL_SEARCH',
+            'keywords': keywords
+        }
+        
+        data = self._make_request(params)
+        if not data or 'bestMatches' not in data:
+            return []
+        
+        results = []
+        for match in data['bestMatches'][:10]:  # 最大10件
+            results.append({
+                'symbol': match.get('1. symbol', ''),
+                'name': match.get('2. name', ''),
+                'type': match.get('3. type', ''),
+                'region': match.get('4. region', ''),
+                'market_open': match.get('5. marketOpen', ''),
+                'market_close': match.get('6. marketClose', ''),
+                'timezone': match.get('7. timezone', ''),
+                'currency': match.get('8. currency', ''),
+                'match_score': match.get('9. matchScore', '')
+            })
+        
+        # キャッシュに保存（1時間）
+        cache_service.set("search", cache_key, results, ttl_minutes=60)
+        return results
+
     def get_stock_quote(self, symbol: str) -> Optional[Dict[str, Any]]:
         """
         リアルタイム株価取得

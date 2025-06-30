@@ -4,13 +4,10 @@
 import os
 import yfinance as yf
 import pandas as pd
-from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Any
-import numpy as np
-from ta import add_all_ta_features
-from ta.utils import dropna
+from datetime import datetime
+from typing import Dict, List, Any
 from ta.momentum import RSIIndicator
-from ta.trend import MACD, SMAIndicator, EMAIndicator
+from ta.trend import MACD, SMAIndicator
 from ta.volatility import BollingerBands
 from .cache_service import cache_service
 from .alpha_vantage_service import alpha_vantage_service
@@ -24,10 +21,35 @@ class StockService:
     
     def search_stocks(self, query: str) -> List[Dict[str, str]]:
         """
-        株式銘柄を検索
+        株式銘柄を検索（Alpha Vantage優先、ハードコードフォールバック）
         """
-        # yfinanceでは直接検索APIはないため、一般的な銘柄のリストから検索
-        # 実際の実装では、別途銘柄リストDBを用意するのが良い
+        results = []
+        
+        # Alpha Vantageのシンボル検索を優先
+        if self.primary_api == 'alpha_vantage':
+            try:
+                print(f"Alpha Vantageで銘柄検索中: {query}")
+                av_results = alpha_vantage_service.search_symbol(query)
+                
+                for match in av_results:
+                    # USの株式とETFのみをフィルタ
+                    if (match.get('region') == 'United States' and
+                            match.get('type') in ['Equity', 'ETF']):
+                        results.append({
+                            "symbol": match['symbol'],
+                            "name": match['name'],
+                            "exchange": self._determine_exchange(match['symbol'])
+                        })
+                
+                if results:
+                    print(f"Alpha Vantageで{len(results)}件の結果を取得")
+                    return results[:10]
+                else:
+                    print("Alpha Vantageで適切な結果が見つからず、フォールバックに移行")
+            except Exception as e:
+                print(f"Alpha Vantage検索エラー: {str(e)}")
+        
+        # フォールバック：ハードコードされた銘柄リスト + 直接検証
         common_stocks = {
             "AAPL": "Apple Inc.",
             "GOOGL": "Alphabet Inc.",
@@ -51,18 +73,49 @@ class StockService:
             "PFE": "Pfizer Inc."
         }
         
-        results = []
         query_upper = query.upper()
         
+        # ハードコードリストから検索
         for symbol, name in common_stocks.items():
             if query_upper in symbol or query.lower() in name.lower():
                 results.append({
                     "symbol": symbol,
                     "name": name,
-                    "exchange": "NASDAQ" if symbol in ["AAPL", "GOOGL", "MSFT", "AMZN", "TSLA", "META", "NVDA", "NFLX", "ADBE", "CRM"] else "NYSE"
+                    "exchange": self._determine_exchange(symbol)
+                })
+        
+        # 直接的な銘柄コード検証（例：EC, PBR, TRMD, NVTS）
+        if query_upper not in [r['symbol'] for r in results]:
+            if self._is_valid_ticker(query_upper):
+                results.insert(0, {
+                    "symbol": query_upper,
+                    "name": f"{query_upper} Corporation",
+                    "exchange": self._determine_exchange(query_upper)
                 })
         
         return results[:10]  # 最大10件まで返す
+    
+    def _determine_exchange(self, symbol: str) -> str:
+        """銘柄コードから取引所を推定"""
+        # NASDAQ銘柄の一般的なパターン
+        nasdaq_symbols = ["AAPL", "GOOGL", "MSFT", "AMZN", "TSLA", "META", "NVDA", "NFLX", "ADBE", "CRM"]
+        if symbol in nasdaq_symbols:
+            return "NASDAQ"
+        # その他はNYSEと仮定
+        return "NYSE"
+    
+    def _is_valid_ticker(self, symbol: str) -> bool:
+        """yfinanceを使用して銘柄コードが有効かどうかを簡易チェック"""
+        try:
+            import yfinance as yf
+            ticker = yf.Ticker(symbol)
+            # 基本情報を取得を試行
+            info = ticker.info
+            # 有効な銘柄であれば何らかの情報が返される
+            return (len(info) > 1 and 
+                    ('symbol' in info or 'shortName' in info or 'longName' in info))
+        except Exception:
+            return False
     
     def get_stock_info(self, symbol: str) -> Dict[str, Any]:
         """
@@ -393,7 +446,8 @@ class StockService:
                     "analysis": {
                         "recommendation": av_analysis['overall_signal'],
                         "confidence": av_analysis['confidence'] / 100.0,  # 0-1の範囲に正規化
-                        "target_price": self._calculate_target_price(av_analysis),
+                        "target_price": 
+                            self._calculate_target_price(av_analysis),
                         "stop_loss": self._calculate_stop_loss(av_analysis),
                         "reasoning": self._extract_reasoning(av_analysis)
                     },
