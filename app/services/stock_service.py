@@ -1,6 +1,7 @@
 """
 株式データサービス
 """
+import os
 import yfinance as yf
 import pandas as pd
 from datetime import datetime, timedelta
@@ -12,12 +13,14 @@ from ta.momentum import RSIIndicator
 from ta.trend import MACD, SMAIndicator, EMAIndicator
 from ta.volatility import BollingerBands
 from .cache_service import cache_service
+from .alpha_vantage_service import alpha_vantage_service
 
 class StockService:
     """株式データの取得と分析を行うサービス"""
     
     def __init__(self):
         self.cache = {}  # シンプルなメモリキャッシュ
+        self.primary_api = os.getenv('PRIMARY_API_PROVIDER', 'alpha_vantage')
     
     def search_stocks(self, query: str) -> List[Dict[str, str]]:
         """
@@ -63,15 +66,37 @@ class StockService:
     
     def get_stock_info(self, symbol: str) -> Dict[str, Any]:
         """
-        指定銘柄の現在情報を取得
+        指定銘柄の現在情報を取得（Alpha Vantage優先、yfinanceフォールバック）
         """
         # キャッシュから取得を試行
         cached_data = cache_service.get(symbol, "stock_info")
         if cached_data:
             return cached_data
         
+        # Alpha Vantageを優先的に使用
+        if self.primary_api == 'alpha_vantage':
+            print(f"Alpha Vantageで株式情報を取得中: {symbol}")
+            av_data = alpha_vantage_service.get_stock_quote(symbol)
+            if av_data and av_data.get('current_price', 0) > 0:
+                result = {
+                    "symbol": symbol.upper(),
+                    "name": av_data.get('name', symbol),
+                    "current_price": av_data['current_price'],
+                    "change": av_data['change'],
+                    "change_percent": float(av_data['change_percent']) if av_data['change_percent'] else 0,
+                    "volume": av_data['volume'],
+                    "market_cap": None  # Alpha Vantageからは取得できない
+                }
+                
+                # キャッシュに保存（5分間）
+                cache_service.set(symbol, "stock_info", result, ttl_minutes=5)
+                return result
+            else:
+                print(f"Alpha Vantage失敗、yfinanceにフォールバック: {symbol}")
+        
+        # yfinanceフォールバック
         try:
-            print(f"株式情報を取得中: {symbol}")
+            print(f"yfinanceで株式情報を取得中: {symbol}")
             # レート制限対策: sessionを使用してリクエスト間隔を調整
             import requests
             import time
@@ -236,12 +261,49 @@ class StockService:
     
     def calculate_technical_indicators(self, symbol: str) -> Dict[str, Any]:
         """
-        テクニカル指標を計算
+        テクニカル指標を計算（Alpha Vantage優先、taライブラリフォールバック）
         """
         # キャッシュから取得を試行
         cached_data = cache_service.get(symbol, "technical_indicators")
         if cached_data:
             return cached_data
+        
+        # Alpha Vantageを優先的に使用
+        if self.primary_api == 'alpha_vantage':
+            print(f"Alpha Vantageで技術指標を取得中: {symbol}")
+            try:
+                rsi_data = alpha_vantage_service.get_rsi(symbol)
+                macd_data = alpha_vantage_service.get_macd(symbol)
+                bbands_data = alpha_vantage_service.get_bollinger_bands(symbol)
+                
+                if rsi_data or macd_data or bbands_data:
+                    result = {
+                        "symbol": symbol,
+                        "rsi": rsi_data.get('rsi') if rsi_data else None,
+                        "macd": {
+                            "macd": macd_data.get('macd'),
+                            "signal": macd_data.get('signal'),
+                            "histogram": macd_data.get('histogram')
+                        } if macd_data else None,
+                        "bollinger_bands": {
+                            "upper": bbands_data.get('upper_band'),
+                            "middle": bbands_data.get('middle_band'),
+                            "lower": bbands_data.get('lower_band')
+                        } if bbands_data else None,
+                        "moving_averages": {
+                            "sma_20": bbands_data.get('middle_band'),  # 中央線は20期間SMA
+                            "sma_50": None,  # Alpha Vantageでは別途取得が必要
+                            "sma_200": None
+                        }
+                    }
+                    
+                    # キャッシュに保存（15分間）
+                    cache_service.set(symbol, "technical_indicators", result, ttl_minutes=15)
+                    return result
+            except Exception as e:
+                print(f"Alpha Vantage技術指標取得エラー: {str(e)}")
+        
+        # taライブラリをフォールバック
         
         try:
             ticker = yf.Ticker(symbol)
@@ -313,13 +375,39 @@ class StockService:
     
     def analyze_stock(self, symbol: str) -> Dict[str, Any]:
         """
-        AIによる株式分析（簡易版）
+        AIによる株式分析（Alpha Vantage優先、従来ロジックフォールバック）
         """
         # キャッシュから取得を試行
         cached_data = cache_service.get(symbol, "stock_analysis")
         if cached_data:
             return cached_data
         
+        # Alpha Vantageの包括的分析を優先使用
+        if self.primary_api == 'alpha_vantage':
+            print(f"Alpha Vantageで包括的分析を実行中: {symbol}")
+            av_analysis = alpha_vantage_service.get_comprehensive_analysis(symbol)
+            if av_analysis and av_analysis.get('overall_signal') != 'ERROR':
+                # Alpha Vantageの結果を標準形式に変換
+                result = {
+                    "symbol": symbol.upper(),
+                    "analysis": {
+                        "recommendation": av_analysis['overall_signal'],
+                        "confidence": av_analysis['confidence'] / 100.0,  # 0-1の範囲に正規化
+                        "target_price": self._calculate_target_price(av_analysis),
+                        "stop_loss": self._calculate_stop_loss(av_analysis),
+                        "reasoning": self._extract_reasoning(av_analysis)
+                    },
+                    "timestamp": av_analysis['timestamp'],
+                    "data_source": "Alpha Vantage"
+                }
+                
+                # キャッシュに保存（10分間）
+                cache_service.set(symbol, "stock_analysis", result, ttl_minutes=10)
+                return result
+            else:
+                print(f"Alpha Vantage分析失敗、従来ロジックにフォールバック: {symbol}")
+        
+        # 従来のロジックをフォールバック
         try:
             # テクニカル指標を取得
             indicators = self.calculate_technical_indicators(symbol)
@@ -409,3 +497,68 @@ class StockService:
                 },
                 "timestamp": datetime.now().isoformat()
             }
+    
+    def _calculate_target_price(self, av_analysis: Dict) -> float:
+        """Alpha Vantage分析結果から目標価格を計算"""
+        try:
+            quote = av_analysis.get('quote', {})
+            current_price = quote.get('current_price', 0)
+            confidence = av_analysis.get('confidence', 50)
+            signal = av_analysis.get('overall_signal', 'HOLD')
+            
+            if signal == 'BUY':
+                # 信頼度に基づいて5-15%の上昇目標
+                multiplier = 1 + (0.05 + (confidence - 50) * 0.002)
+                return round(current_price * multiplier, 2)
+            elif signal == 'SELL':
+                # 売りシグナルの場合は現在価格より低く設定
+                multiplier = 1 - (0.05 + (confidence - 50) * 0.001)
+                return round(current_price * multiplier, 2)
+            else:
+                return current_price
+        except:
+            return 0
+    
+    def _calculate_stop_loss(self, av_analysis: Dict) -> float:
+        """Alpha Vantage分析結果からストップロスを計算"""
+        try:
+            quote = av_analysis.get('quote', {})
+            current_price = quote.get('current_price', 0)
+            signal = av_analysis.get('overall_signal', 'HOLD')
+            
+            if signal == 'BUY':
+                # 買いポジションの場合は5-8%下で損切り
+                return round(current_price * 0.95, 2)
+            elif signal == 'SELL':
+                # 売りポジションの場合は3-5%上で損切り
+                return round(current_price * 1.03, 2)
+            else:
+                return current_price
+        except:
+            return 0
+    
+    def _extract_reasoning(self, av_analysis: Dict) -> List[str]:
+        """Alpha Vantage分析結果から推論理由を抽出"""
+        try:
+            reasoning = []
+            
+            # 各指標の解釈を追加
+            if 'rsi' in av_analysis and av_analysis['rsi']:
+                rsi_data = av_analysis['rsi']
+                reasoning.append(f"RSI: {rsi_data.get('rsi', 'N/A')} - {rsi_data.get('signal', '')}")
+            
+            if 'macd' in av_analysis and av_analysis['macd']:
+                macd_data = av_analysis['macd']
+                reasoning.append(f"MACD: {macd_data.get('signal_interpretation', '')}")
+            
+            if 'bollinger_bands' in av_analysis and av_analysis['bollinger_bands']:
+                bb_data = av_analysis['bollinger_bands']
+                reasoning.append(f"ボリンジャーバンド: {bb_data.get('signal', '')}")
+            
+            # 総合分析サマリーを追加
+            if 'analysis_summary' in av_analysis:
+                reasoning.append(f"総合判定: {av_analysis['analysis_summary']}")
+            
+            return reasoning if reasoning else ["Alpha Vantage技術分析に基づく判定"]
+        except:
+            return ["分析データの解釈中にエラーが発生"]
