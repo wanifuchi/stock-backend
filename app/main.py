@@ -30,7 +30,8 @@ app = FastAPI(
 origins = [
     "http://localhost:3000",  # 開発環境
     "http://localhost:3001",  # 開発環境
-    "https://*.vercel.app",   # Vercel本番環境（ワイルドカード）
+    "https://stock-frontend-mu.vercel.app",  # Vercel本番環境
+    "https://stock-frontend-kcn1oe96y-wanifucks.vercel.app",  # Vercelデプロイメント環境
 ]
 
 app.add_middleware(
