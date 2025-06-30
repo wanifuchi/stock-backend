@@ -92,3 +92,31 @@ async def get_stock_analysis(symbol: str):
         return analysis
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"株式分析に失敗しました: {str(e)}")
+
+@router.get("/debug/test")
+async def debug_test():
+    """
+    デバッグ用テストエンドポイント
+    """
+    import yfinance as yf
+    try:
+        # 簡単なテスト
+        ticker = yf.Ticker("AAPL")
+        info = ticker.info
+        return {
+            "status": "success",
+            "yfinance_version": yf.__version__,
+            "info_keys": len(info),
+            "sample_data": {
+                "symbol": info.get("symbol"),
+                "longName": info.get("longName"),
+                "currentPrice": info.get("currentPrice")
+            }
+        }
+    except Exception as e:
+        import traceback
+        return {
+            "status": "error", 
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }

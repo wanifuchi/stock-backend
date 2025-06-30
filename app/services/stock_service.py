@@ -71,13 +71,17 @@ class StockService:
             return cached_data
         
         try:
+            print(f"株式情報を取得中: {symbol}")
             ticker = yf.Ticker(symbol)
             info = ticker.info
+            print(f"info取得完了: {len(info)} 項目")
             
             # 最新の価格データを取得
             hist = ticker.history(period="1d", interval="1m")
+            print(f"履歴データ取得(1d): {len(hist)} 行")
             if hist.empty:
                 hist = ticker.history(period="5d")
+                print(f"履歴データ取得(5d): {len(hist)} 行")
             
             if not hist.empty:
                 current_price = hist['Close'].iloc[-1]
@@ -106,10 +110,13 @@ class StockService:
             cache_service.set(symbol, "stock_info", result, ttl_minutes=5)
             return result
         except Exception as e:
-            print(f"株式情報取得エラー: {str(e)}")
+            error_message = f"株式情報取得エラー: {str(e)}"
+            print(error_message)
+            import traceback
+            print(f"詳細なエラー: {traceback.format_exc()}")
             return {
                 "symbol": symbol.upper(),
-                "name": "Unknown",
+                "name": f"Error: {str(e)}",
                 "current_price": 0,
                 "change": 0,
                 "change_percent": 0,
