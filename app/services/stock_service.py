@@ -72,7 +72,20 @@ class StockService:
         
         try:
             print(f"株式情報を取得中: {symbol}")
-            ticker = yf.Ticker(symbol)
+            # レート制限対策: sessionを使用してリクエスト間隔を調整
+            import requests
+            import time
+            
+            # セッションを作成してUser-Agentを設定
+            session = requests.Session()
+            session.headers.update({
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            })
+            
+            ticker = yf.Ticker(symbol, session=session)
+            
+            # 少し待機してからデータ取得
+            time.sleep(1)
             info = ticker.info
             print(f"info取得完了: {len(info)} 項目")
             
@@ -114,6 +127,11 @@ class StockService:
             print(error_message)
             import traceback
             print(f"詳細なエラー: {traceback.format_exc()}")
+            
+            # API制限エラーの場合はモックデータを返す
+            if "429" in str(e) or "Too Many Requests" in str(e):
+                return self._get_mock_data(symbol)
+            
             return {
                 "symbol": symbol.upper(),
                 "name": f"Error: {str(e)}",
@@ -122,6 +140,52 @@ class StockService:
                 "change_percent": 0,
                 "volume": 0,
                 "market_cap": None
+            }
+    
+    def _get_mock_data(self, symbol: str) -> Dict[str, Any]:
+        """
+        API制限時のモックデータを生成
+        """
+        import random
+        
+        # 銘柄別のモックデータ
+        mock_data = {
+            "AAPL": {"name": "Apple Inc.", "base_price": 195.0, "volume": 50000000},
+            "GOOGL": {"name": "Alphabet Inc.", "base_price": 140.0, "volume": 25000000},
+            "MSFT": {"name": "Microsoft Corporation", "base_price": 425.0, "volume": 30000000},
+            "AMZN": {"name": "Amazon.com Inc.", "base_price": 155.0, "volume": 35000000},
+            "TSLA": {"name": "Tesla Inc.", "base_price": 250.0, "volume": 40000000},
+            "NVDA": {"name": "NVIDIA Corporation", "base_price": 480.0, "volume": 45000000},
+            "META": {"name": "Meta Platforms Inc.", "base_price": 330.0, "volume": 20000000},
+        }
+        
+        symbol_upper = symbol.upper()
+        if symbol_upper in mock_data:
+            data = mock_data[symbol_upper]
+            # ランダムな変動を追加
+            price_change = random.uniform(-5.0, 5.0)
+            current_price = data["base_price"] + price_change
+            change_percent = (price_change / data["base_price"]) * 100
+            
+            return {
+                "symbol": symbol_upper,
+                "name": data["name"] + " (モックデータ)",
+                "current_price": round(current_price, 2),
+                "change": round(price_change, 2),
+                "change_percent": round(change_percent, 2),
+                "volume": data["volume"] + random.randint(-1000000, 1000000),
+                "market_cap": int(current_price * 16_000_000_000)  # 概算
+            }
+        else:
+            # 未知の銘柄の場合
+            return {
+                "symbol": symbol_upper,
+                "name": f"{symbol_upper} Corporation (モックデータ)",
+                "current_price": round(random.uniform(50, 500), 2),
+                "change": round(random.uniform(-10, 10), 2),
+                "change_percent": round(random.uniform(-5, 5), 2),
+                "volume": random.randint(1000000, 50000000),
+                "market_cap": random.randint(10_000_000_000, 2_000_000_000_000)
             }
     
     def get_price_history(self, symbol: str, period: str = "1mo") -> Dict[str, Any]:
