@@ -2,6 +2,7 @@
 株式データサービス
 """
 import os
+import random
 import yfinance as yf
 import pandas as pd
 from datetime import datetime
@@ -12,6 +13,7 @@ from ta.volatility import BollingerBands
 from .cache_service import cache_service
 from .alpha_vantage_service import alpha_vantage_service
 from .enhanced_analysis_service import enhanced_analysis_service
+from .advanced_trading_service import advanced_trading_service
 
 class StockService:
     """株式データの取得と分析を行うサービス"""
@@ -434,7 +436,27 @@ class StockService:
             indicators = enhanced_analysis_service.generate_realistic_technical_indicators(symbol, current_info['current_price'])
             
             # 強化された分析を実行
-            result = enhanced_analysis_service.generate_advanced_analysis(symbol, current_info, indicators)
+            basic_result = enhanced_analysis_service.generate_advanced_analysis(symbol, current_info, indicators)
+            
+            # 高度な売買タイミング分析を追加
+            try:
+                # 価格履歴とボリューム履歴を生成（モック）
+                price_history = [current_info['current_price'] * (1 + random.gauss(0, 0.01)) for _ in range(50)]
+                volume_history = [current_info['volume'] + random.randint(-100000, 100000) for _ in range(50)]
+                
+                # 高度な売買分析
+                advanced_analysis = advanced_trading_service.generate_comprehensive_analysis(
+                    symbol, current_info, indicators, price_history, volume_history
+                )
+                
+                # 結果を統合
+                result = {
+                    **basic_result,
+                    'advanced_trading': advanced_analysis
+                }
+            except Exception as e:
+                print(f"高度な売買分析エラー: {str(e)}")
+                result = basic_result
             
             # キャッシュに保存（15分間）
             cache_service.set(symbol, "stock_analysis", result, ttl_minutes=15)
