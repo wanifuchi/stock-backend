@@ -15,8 +15,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # アプリケーションファイルをコピー
 COPY . .
 
-# ポート公開
+# デフォルトポート設定
+ENV PORT=8000
 EXPOSE $PORT
 
-# アプリケーション起動
-CMD python -m uvicorn main:app --host 0.0.0.0 --port $PORT
+# アプリケーション起動 - main.pyを使用してPORT環境変数を適切に処理
+CMD ["python", "main.py"]
