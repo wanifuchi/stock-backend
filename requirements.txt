@@ -1,11 +1,2 @@
-fastapi
-uvicorn[standard]
-pydantic
-python-multipart
-sqlalchemy
-aiosqlite
-pandas
-numpy
-python-dotenv
-requests
-httpx
+fastapi==0.104.1
+uvicorn==0.24.0
