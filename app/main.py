@@ -32,13 +32,14 @@ origins = [
     "http://localhost:3001",  # 開発環境
     "https://stock-frontend-mu.vercel.app",  # Vercel本番環境
     "https://stock-frontend-kcn1oe96y-wanifucks.vercel.app",  # Vercelデプロイメント環境
+    "*",  # 緊急対応：全オリジン許可（後で特定URLに制限）
 ]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
-    allow_methods=["*"],
+    allow_origins=["*"],  # 緊急対応：全オリジン許可
+    allow_credentials=False,  # credentials=Falseで*を使用
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
