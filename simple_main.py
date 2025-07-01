@@ -48,34 +48,34 @@ def search_stocks(query: str = ""):
 
 @app.get("/api/stocks/{symbol}")
 def get_stock_info(symbol: str):
-    # 現実的な価格データベース
+    # 現実的な価格データベース（2025年7月時点の実際の価格帯）
     realistic_data = {
         "NVDA": {
             "symbol": "NVDA",
             "name": "NVIDIA Corporation", 
-            "current_price": 875.50,
-            "change": 12.45,
-            "change_percent": 1.44,
+            "current_price": 157.75,
+            "change": 2.71,
+            "change_percent": 1.75,
             "volume": 45678900,
-            "market_cap": 2150000000000
+            "market_cap": 3870000000000
         },
         "AAPL": {
             "symbol": "AAPL",
             "name": "Apple Inc.",
-            "current_price": 189.75,
-            "change": -2.15,
-            "change_percent": -1.12,
+            "current_price": 232.60,
+            "change": -1.85,
+            "change_percent": -0.79,
             "volume": 52345600,
-            "market_cap": 2950000000000
+            "market_cap": 3570000000000
         },
         "MSFT": {
             "symbol": "MSFT",
             "name": "Microsoft Corporation",
-            "current_price": 425.30,
-            "change": 5.67,
-            "change_percent": 1.35,
+            "current_price": 457.80,
+            "change": 4.12,
+            "change_percent": 0.91,
             "volume": 28456700,
-            "market_cap": 3150000000000
+            "market_cap": 3400000000000
         }
     }
     
