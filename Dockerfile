@@ -15,5 +15,5 @@ COPY . .
 ENV PORT=8000
 EXPOSE 8000
 
-# 起動 - Railway PORT環境変数を使用
-CMD uvicorn simple_main:app --host 0.0.0.0 --port $PORT
+# 起動 - main.pyでPORT環境変数を確実に処理
+CMD ["python", "main.py"]
