@@ -1,11 +1,35 @@
 """
-超シンプルなFastAPIアプリ - Railway起動テスト用
+Railway用のシンプルなFastAPIアプリ - 実際のAPIサービスを使用
 """
-from fastapi import FastAPI
+import os
+import sys
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from typing import Optional
+from dotenv import load_dotenv
+
+# 環境変数の読み込み
+load_dotenv()
+
+# プロジェクトのルートディレクトリをPythonパスに追加
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+# 既存のサービスをインポート
+try:
+    from app.services.stock_service import StockService
+    from app.services.alpha_vantage_service import alpha_vantage_service
+    from app.services.enhanced_analysis_service import enhanced_analysis_service
+    stock_service = StockService()
+except ImportError as e:
+    print(f"サービスのインポートエラー: {e}")
+    stock_service = None
 
 # FastAPIインスタンス
-app = FastAPI(title="Simple Stock API", version="0.1.0")
+app = FastAPI(
+    title="Stock API with Real Data",
+    version="2.0.0",
+    description="実際の株価データを提供するAPI"
+)
 
 # CORS設定
 app.add_middleware(
@@ -18,215 +42,154 @@ app.add_middleware(
 
 @app.get("/")
 def root():
-    return {"message": "Hello World", "status": "running"}
+    """ルートエンドポイント"""
+    return {
+        "message": "Stock API with Real Data",
+        "status": "running",
+        "version": "2.0.0",
+        "data_source": os.getenv('PRIMARY_API_PROVIDER', 'alpha_vantage')
+    }
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "service": "simple stock api"}
+    """ヘルスチェックエンドポイント"""
+    return {
+        "status": "ok",
+        "service": "stock api with real data",
+        "alpha_vantage_key": "configured" if os.getenv('ALPHA_VANTAGE_API_KEY') else "not configured"
+    }
 
 @app.get("/api/stocks/search")
 def search_stocks(query: str = ""):
-    # クエリに基づいたフィルタリング
-    all_stocks = [
-        {"symbol": "NVDA", "name": "NVIDIA Corporation", "exchange": "NASDAQ"},
-        {"symbol": "AAPL", "name": "Apple Inc.", "exchange": "NASDAQ"},
-        {"symbol": "MSFT", "name": "Microsoft Corporation", "exchange": "NASDAQ"},
-        {"symbol": "GOOGL", "name": "Alphabet Inc.", "exchange": "NASDAQ"},
-        {"symbol": "TSLA", "name": "Tesla Inc.", "exchange": "NASDAQ"}
-    ]
+    """銘柄検索エンドポイント - 実データを使用"""
+    if not stock_service:
+        # フォールバック：基本的なモックデータ
+        return {"query": query, "results": [
+            {"symbol": "AAPL", "name": "Apple Inc.", "exchange": "NASDAQ"},
+            {"symbol": "MSFT", "name": "Microsoft Corporation", "exchange": "NASDAQ"}
+        ]}
     
-    if not query:
-        return {"query": query, "results": all_stocks}
-    
-    # クエリに一致する株式をフィルタリング
-    filtered = [
-        stock for stock in all_stocks 
-        if query.upper() in stock["symbol"] or query.upper() in stock["name"].upper()
-    ]
-    
-    return {"query": query, "results": filtered}
+    try:
+        results = stock_service.search_stocks(query)
+        return {"query": query, "results": results}
+    except Exception as e:
+        print(f"検索エラー: {str(e)}")
+        # エラー時はフォールバック
+        return {"query": query, "results": [], "error": str(e)}
 
 @app.get("/api/stocks/{symbol}")
 def get_stock_info(symbol: str):
-    # 現実的な価格データベース（2025年7月時点の実際の価格帯）
-    realistic_data = {
-        "NVDA": {
-            "symbol": "NVDA",
-            "name": "NVIDIA Corporation", 
-            "current_price": 157.75,
-            "change": 2.71,
-            "change_percent": 1.75,
-            "volume": 45678900,
-            "market_cap": 3870000000000
-        },
-        "AAPL": {
-            "symbol": "AAPL",
-            "name": "Apple Inc.",
-            "current_price": 232.60,
-            "change": -1.85,
-            "change_percent": -0.79,
-            "volume": 52345600,
-            "market_cap": 3570000000000
-        },
-        "MSFT": {
-            "symbol": "MSFT",
-            "name": "Microsoft Corporation",
-            "current_price": 457.80,
-            "change": 4.12,
-            "change_percent": 0.91,
-            "volume": 28456700,
-            "market_cap": 3400000000000
-        }
-    }
-    
-    # デフォルトデータ（現実的な価格レンジ）
-    import random
-    if symbol.upper() not in realistic_data:
-        base_price = random.uniform(50, 300)
-        change = random.uniform(-10, 10)
+    """株式情報取得エンドポイント - 実データを使用"""
+    if not stock_service:
+        # フォールバック：基本的なモックデータ
         return {
             "symbol": symbol.upper(),
-            "name": f"{symbol.upper()} Company",
-            "current_price": round(base_price, 2),
-            "change": round(change, 2),
-            "change_percent": round((change / base_price) * 100, 2),
-            "volume": random.randint(1000000, 50000000),
-            "market_cap": random.randint(10000000000, 500000000000)
+            "name": f"{symbol.upper()} Corporation",
+            "current_price": 100.00,
+            "change": 1.00,
+            "change_percent": 1.0,
+            "volume": 1000000,
+            "error": "Service not available"
         }
     
-    return realistic_data[symbol.upper()]
+    try:
+        stock_info = stock_service.get_stock_info(symbol)
+        return stock_info
+    except Exception as e:
+        print(f"株式情報取得エラー: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/stocks/{symbol}/history")
 def get_price_history(symbol: str, period: str = "1mo"):
-    # 現在価格と整合性のある価格履歴
-    import random
+    """価格履歴取得エンドポイント - 実データを使用"""
+    if not stock_service:
+        # フォールバック：空のデータ
+        return {
+            "symbol": symbol.upper(),
+            "dates": [],
+            "prices": [],
+            "volumes": [],
+            "error": "Service not available"
+        }
     
-    # 現在価格を取得
-    current_data = get_stock_info(symbol)
-    current_price = current_data["current_price"]
-    
-    dates = [f"2024-06-{i:02d}" for i in range(1, 31)]
-    prices = []
-    volumes = []
-    
-    # 30日前の価格を現在価格の90-95%に設定
-    start_price = current_price * random.uniform(0.90, 0.95)
-    
-    # 現在価格に向けてリアルな価格推移を生成
-    for i in range(30):
-        # 線形補間 + ランダムな変動
-        progress = i / 29  # 0から1へ
-        base_price = start_price + (current_price - start_price) * progress
-        
-        # 日々の変動は±3%以内
-        daily_variation = base_price * random.uniform(-0.03, 0.03)
-        price = base_price + daily_variation
-        
-        # 最終日は現在価格に設定
-        if i == 29:
-            price = current_price
-            
-        volume = random.randint(
-            int(current_data["volume"] * 0.5), 
-            int(current_data["volume"] * 1.5)
-        )
-        
-        prices.append(round(price, 2))
-        volumes.append(volume)
-    
-    return {
-        "symbol": symbol.upper(),
-        "dates": dates,
-        "prices": prices,
-        "volumes": volumes
-    }
+    try:
+        history = stock_service.get_price_history(symbol, period)
+        return history
+    except Exception as e:
+        print(f"価格履歴取得エラー: {str(e)}")
+        return {
+            "symbol": symbol.upper(),
+            "dates": [],
+            "prices": [],
+            "volumes": [],
+            "error": str(e)
+        }
 
 @app.get("/api/stocks/{symbol}/indicators")
 def get_technical_indicators(symbol: str):
-    # 現在価格と整合性のあるテクニカル指標
-    import random
-    
-    # 現在価格を取得
-    current_data = get_stock_info(symbol)
-    current_price = current_data["current_price"]
-    
-    # ボリンジャーバンド（現在価格を中央に±5-10%）
-    volatility = random.uniform(0.05, 0.10)
-    bb_middle = current_price * random.uniform(0.98, 1.02)  # 中央線
-    bb_upper = bb_middle * (1 + volatility)
-    bb_lower = bb_middle * (1 - volatility)
-    
-    # 移動平均線（現在価格周辺に配置）
-    sma_20 = current_price * random.uniform(0.95, 1.05)
-    sma_50 = current_price * random.uniform(0.90, 1.10) 
-    sma_200 = current_price * random.uniform(0.85, 1.15)
-    
-    return {
-        "symbol": symbol.upper(),
-        "rsi": round(random.uniform(30, 70), 2),
-        "macd": {
-            "macd": round(random.uniform(-2, 2), 2),
-            "signal": round(random.uniform(-2, 2), 2),
-            "histogram": round(random.uniform(-1, 1), 2)
-        },
-        "bollinger_bands": {
-            "upper": round(bb_upper, 2),
-            "middle": round(bb_middle, 2),
-            "lower": round(bb_lower, 2)
-        },
-        "moving_averages": {
-            "sma_20": round(sma_20, 2),
-            "sma_50": round(sma_50, 2),
-            "sma_200": round(sma_200, 2)
+    """テクニカル指標取得エンドポイント - 実データを使用"""
+    if not stock_service:
+        # フォールバック：基本的なモックデータ
+        return {
+            "symbol": symbol.upper(),
+            "rsi": 50.0,
+            "macd": {"macd": 0, "signal": 0, "histogram": 0},
+            "bollinger_bands": {"upper": 110, "middle": 100, "lower": 90},
+            "moving_averages": {"sma_20": 100, "sma_50": 100, "sma_200": 100},
+            "error": "Service not available"
         }
-    }
+    
+    try:
+        indicators = stock_service.calculate_technical_indicators(symbol)
+        return indicators
+    except Exception as e:
+        print(f"テクニカル指標取得エラー: {str(e)}")
+        return {
+            "symbol": symbol.upper(),
+            "error": str(e)
+        }
 
 @app.get("/api/stocks/{symbol}/analysis")
 def get_stock_analysis(symbol: str):
-    # 現在価格と整合性のある株式分析
-    import random
+    """株式分析エンドポイント - AI分析を使用"""
+    if not stock_service:
+        # フォールバック：基本的なモック分析
+        return {
+            "symbol": symbol.upper(),
+            "analysis": {
+                "recommendation": "HOLD",
+                "confidence": 0.5,
+                "target_price": 100.0,
+                "stop_loss": 95.0,
+                "reasoning": ["サービスが利用できません"]
+            },
+            "timestamp": "2024-01-01T00:00:00Z",
+            "error": "Service not available"
+        }
     
-    # 現在価格を取得
-    current_data = get_stock_info(symbol)
-    current_price = current_data["current_price"]
-    
-    recommendations = ["BUY", "SELL", "HOLD"]
-    recommendation = random.choice(recommendations)
-    
-    # 推奨に基づいた論理的な目標価格・損切り設定
-    if recommendation == "BUY":
-        target_price = current_price * random.uniform(1.05, 1.20)  # 5-20%上昇目標
-        stop_loss = current_price * random.uniform(0.85, 0.95)     # 5-15%下落で損切り
-        reasoning = [
-            f"{symbol.upper()}の技術的指標は強気を示している",
-            "市場センチメントがポジティブ",
-            "ファンダメンタルズが改善傾向"
-        ]
-    elif recommendation == "SELL":
-        target_price = current_price * random.uniform(0.80, 0.95)  # 5-20%下落予想
-        stop_loss = current_price * random.uniform(1.05, 1.15)     # 5-15%上昇で損切り
-        reasoning = [
-            f"{symbol.upper()}は過大評価の可能性",
-            "市場環境の悪化懸念",
-            "業績下方修正リスク"
-        ]
-    else:  # HOLD
-        target_price = current_price * random.uniform(0.98, 1.08)  # ±2-8%レンジ
-        stop_loss = current_price * random.uniform(0.90, 0.95)     # 5-10%下落で損切り
-        reasoning = [
-            f"{symbol.upper()}は適正価格で推移",
-            "様子見の局面",
-            "明確な方向性待ち"
-        ]
-    
+    try:
+        analysis = stock_service.analyze_stock(symbol)
+        return analysis
+    except Exception as e:
+        print(f"株式分析エラー: {str(e)}")
+        return {
+            "symbol": symbol.upper(),
+            "analysis": {
+                "recommendation": "ERROR",
+                "confidence": 0,
+                "target_price": 0,
+                "stop_loss": 0,
+                "reasoning": [f"分析エラー: {str(e)}"]
+            },
+            "timestamp": "2024-01-01T00:00:00Z"
+        }
+
+# 以下は開発/デバッグ用のエンドポイント
+@app.get("/api/debug/config")
+def debug_config():
+    """現在の設定を確認（開発用）"""
     return {
-        "symbol": symbol.upper(),
-        "analysis": {
-            "recommendation": recommendation,
-            "confidence": round(random.uniform(0.6, 0.9), 2),
-            "target_price": round(target_price, 2),
-            "stop_loss": round(stop_loss, 2),
-            "reasoning": reasoning
-        },
-        "timestamp": "2024-06-30T12:00:00Z"
+        "primary_api": os.getenv('PRIMARY_API_PROVIDER', 'not set'),
+        "alpha_vantage_configured": bool(os.getenv('ALPHA_VANTAGE_API_KEY')),
+        "environment": os.getenv('ENVIRONMENT', 'not set')
     }

@@ -14,6 +14,7 @@ from .cache_service import cache_service
 from .alpha_vantage_service import alpha_vantage_service
 from .enhanced_analysis_service import enhanced_analysis_service
 from .advanced_trading_service import advanced_trading_service
+from .free_apis_service import free_apis_service
 
 class StockService:
     """株式データの取得と分析を行うサービス"""
@@ -122,7 +123,8 @@ class StockService:
     
     def get_stock_info(self, symbol: str) -> Dict[str, Any]:
         """
-        指定銘柄の現在情報を取得（Alpha Vantage優先、yfinanceフォールバック）
+        指定銘柄の現在情報を取得（複数APIを試行）
+        優先順位: Alpha Vantage > 無料API > yfinance
         """
         # キャッシュから取得を試行
         cached_data = cache_service.get(symbol, "stock_info")
@@ -148,7 +150,19 @@ class StockService:
                 cache_service.set(symbol, "stock_info", result, ttl_minutes=5)
                 return result
             else:
-                print(f"Alpha Vantage失敗、yfinanceにフォールバック: {symbol}")
+                print(f"Alpha Vantage失敗、無料APIを試行: {symbol}")
+        
+        # 無料APIサービスを試行
+        free_api_data = free_apis_service.get_best_available_quote(symbol)
+        if free_api_data:
+            print(f"無料API ({free_api_data.get('data_source')}) で取得成功: {symbol}")
+            # データソース情報を削除
+            if 'data_source' in free_api_data:
+                del free_api_data['data_source']
+            
+            # キャッシュに保存（5分間）
+            cache_service.set(symbol, "stock_info", free_api_data, ttl_minutes=5)
+            return free_api_data
         
         # yfinanceフォールバック
         try:
