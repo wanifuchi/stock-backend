@@ -458,6 +458,11 @@ class RealStockService:
             "DIS": {"name": "Walt Disney Company", "exchange": "NYSE"},
             "PYPL": {"name": "PayPal Holdings Inc.", "exchange": "NASDAQ"},
             
+            # E-commerce & Consumer関連
+            "EC": {"name": "Ecolab Inc.", "exchange": "NYSE"},
+            "EBAY": {"name": "eBay Inc.", "exchange": "NASDAQ"},
+            "ETSY": {"name": "Etsy Inc.", "exchange": "NASDAQ"},
+            
             # 金融・その他
             "JPM": {"name": "JPMorgan Chase & Co.", "exchange": "NYSE"},
             "BAC": {"name": "Bank of America Corp", "exchange": "NYSE"},
@@ -552,19 +557,48 @@ class RealStockService:
             "SOXX": {"name": "iShares Semiconductor ETF", "exchange": "NASDAQ"}
         }
         
-        # 主要銘柄データベースから部分一致検索
+        # 関連度スコアリング方式の検索
+        scored_results = []
+        
         for symbol, info in major_stocks.items():
-            if (query_upper in symbol or 
-                query_upper in info["name"].upper() or
-                symbol.startswith(query_upper)):
-                
-                # 重複チェック
-                if not any(r["symbol"] == symbol for r in results):
-                    results.append({
-                        "symbol": symbol,
-                        "name": info["name"],
-                        "exchange": info["exchange"]
-                    })
+            score = 0
+            name_upper = info["name"].upper()
+            
+            # 1. シンボル完全一致 (最高優先度)
+            if symbol == query_upper:
+                score = 10
+            # 2. シンボル前方一致
+            elif symbol.startswith(query_upper):
+                score = 8
+            # 3. 名称の単語前方一致
+            elif any(word.startswith(query_upper) for word in name_upper.split()):
+                score = 6
+            # 4. シンボル部分一致
+            elif query_upper in symbol:
+                score = 4
+            # 5. 名称の部分一致（フォールバック、短いクエリは除外）
+            elif len(query_upper) >= 3 and query_upper in name_upper:
+                score = 2
+            
+            if score > 0:
+                scored_results.append({
+                    "symbol": symbol,
+                    "name": info["name"],
+                    "exchange": info["exchange"],
+                    "score": score
+                })
+        
+        # スコア順でソート（高い順）
+        scored_results.sort(key=lambda x: x["score"], reverse=True)
+        
+        # 重複チェックして結果に追加
+        for item in scored_results:
+            if not any(r["symbol"] == item["symbol"] for r in results):
+                results.append({
+                    "symbol": item["symbol"],
+                    "name": item["name"],
+                    "exchange": item["exchange"]
+                })
         
         # 3. クエリが銘柄コードっぽい場合（2-5文字のアルファベット）は推測で追加
         if len(query_upper) >= 2 and len(query_upper) <= 5 and query_upper.isalpha():
