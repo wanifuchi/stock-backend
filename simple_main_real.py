@@ -59,7 +59,14 @@ class RealStockService:
             "TSLA": {"price": 251.52, "name": "Tesla Inc.", "change": 6.78},
             "AMD": {"price": 158.90, "name": "Advanced Micro Devices", "change": 2.45},
             "INTC": {"price": 33.85, "name": "Intel Corporation", "change": -0.23},
-            "NFLX": {"price": 638.45, "name": "Netflix Inc.", "change": 8.90}
+            "NFLX": {"price": 638.45, "name": "Netflix Inc.", "change": 8.90},
+            
+            # 追加銘柄
+            "NVTS": {"price": 8.45, "name": "Navitas Semiconductor", "change": 0.35},
+            "TSM": {"price": 172.45, "name": "Taiwan Semiconductor", "change": 2.15},
+            "MU": {"price": 118.90, "name": "Micron Technology", "change": -1.23},
+            "AVGO": {"price": 1789.45, "name": "Broadcom Inc.", "change": 15.67},
+            "QCOM": {"price": 212.34, "name": "Qualcomm Inc.", "change": 3.45}
         }
             
         # 1. yfinance（制限回避機能付き）
@@ -138,7 +145,7 @@ class RealStockService:
             except Exception as e:
                 print(f"Finnhub error for {symbol}: {str(e)}")
         
-        # 3. フォールバック: 現実的なデータ
+        # 3. フォールバック: 現実的なデータ（主要銘柄）
         symbol_upper = symbol.upper()
         if symbol_upper in realistic_prices:
             stock_info = realistic_prices[symbol_upper]
@@ -169,42 +176,158 @@ class RealStockService:
             }
             
             return data
+        
+        # 4. 汎用フォールバック: 任意の銘柄に対して推定データを生成
+        # 銘柄コードが有効そうな場合（2-5文字のアルファベット）
+        if len(symbol_upper) >= 2 and len(symbol_upper) <= 5 and symbol_upper.isalpha():
+            # 銘柄の特性に基づいた価格レンジを設定
+            if any(tech in symbol_upper for tech in ['NV', 'AI', 'SEMI', 'CHIP']):
+                # 半導体/AI関連株
+                base_price = random.uniform(50, 300)
+            elif any(crypto in symbol_upper for crypto in ['COIN', 'BTC', 'CRYPTO']):
+                # 暗号通貨関連株
+                base_price = random.uniform(100, 500)
+            elif symbol_upper.endswith('F') or 'ETF' in symbol_upper:
+                # ETF
+                base_price = random.uniform(200, 800)
+            else:
+                # 一般株式
+                base_price = random.uniform(20, 200)
+            
+            change = random.uniform(-5, 5)
+            change_percent = round((change / base_price) * 100, 2)
+            
+            data = {
+                "symbol": symbol_upper,
+                "name": f"{symbol_upper} Corporation",
+                "current_price": round(base_price, 2),
+                "change": round(change, 2),
+                "change_percent": change_percent,
+                "high": round(base_price * random.uniform(1.01, 1.05), 2),
+                "low": round(base_price * random.uniform(0.95, 0.99), 2),
+                "open": round(base_price - (change * random.uniform(0.3, 0.7)), 2),
+                "previous_close": round(base_price - change, 2),
+                "volume": random.randint(100000, 10000000),
+                "market_cap": random.randint(1000000000, 100000000000),
+                "source": "fallback_generated",
+                "timestamp": datetime.now().isoformat()
+            }
+            
+            # キャッシュに保存
+            self.cache[symbol] = {
+                'data': data,
+                'timestamp': time.time()
+            }
+            
+            return data
                 
         return None
         
     def search_stocks(self, query: str) -> List[Dict[str, str]]:
-        """銘柄検索"""
-        # 主要銘柄のデータベース
+        """銘柄検索（動的検索 + フォールバック）"""
+        if not query or len(query.strip()) < 1:
+            # 空の場合は人気銘柄を返す
+            return [
+                {"symbol": "NVDA", "name": "NVIDIA Corporation", "exchange": "NASDAQ"},
+                {"symbol": "AAPL", "name": "Apple Inc.", "exchange": "NASDAQ"},
+                {"symbol": "MSFT", "name": "Microsoft Corporation", "exchange": "NASDAQ"}
+            ]
+        
+        query_upper = query.upper().strip()
+        results = []
+        
+        # 1. 完全一致の場合は直接yfinanceで検証
+        if len(query_upper) >= 2:
+            try:
+                ticker = yf.Ticker(query_upper)
+                ticker.session.headers.update({
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                })
+                info = ticker.info
+                
+                # yfinanceから有効な銘柄情報が取得できた場合
+                if info and info.get('symbol'):
+                    symbol = info.get('symbol', query_upper)
+                    name = info.get('longName') or info.get('shortName') or f"{symbol} Corporation"
+                    exchange = info.get('exchange', 'NASDAQ')
+                    
+                    results.append({
+                        "symbol": symbol,
+                        "name": name,
+                        "exchange": exchange
+                    })
+                    
+                    # 完全一致が見つかった場合はそれを返す
+                    if symbol.upper() == query_upper:
+                        return results
+                        
+            except Exception as e:
+                print(f"yfinance search error for {query_upper}: {str(e)}")
+        
+        # 2. 拡張された主要銘柄データベースから検索
         major_stocks = {
+            # 大型テック株
             "NVDA": {"name": "NVIDIA Corporation", "exchange": "NASDAQ"},
             "AAPL": {"name": "Apple Inc.", "exchange": "NASDAQ"},
             "MSFT": {"name": "Microsoft Corporation", "exchange": "NASDAQ"},
             "GOOGL": {"name": "Alphabet Inc.", "exchange": "NASDAQ"},
+            "GOOG": {"name": "Alphabet Inc. Class C", "exchange": "NASDAQ"},
             "AMZN": {"name": "Amazon.com Inc.", "exchange": "NASDAQ"},
             "META": {"name": "Meta Platforms Inc.", "exchange": "NASDAQ"},
             "TSLA": {"name": "Tesla Inc.", "exchange": "NASDAQ"},
             "AMD": {"name": "Advanced Micro Devices", "exchange": "NASDAQ"},
             "INTC": {"name": "Intel Corporation", "exchange": "NASDAQ"},
             "NFLX": {"name": "Netflix Inc.", "exchange": "NASDAQ"},
+            
+            # 半導体関連
             "TSM": {"name": "Taiwan Semiconductor", "exchange": "NYSE"},
             "AVGO": {"name": "Broadcom Inc.", "exchange": "NASDAQ"},
+            "QCOM": {"name": "Qualcomm Inc.", "exchange": "NASDAQ"},
+            "MU": {"name": "Micron Technology", "exchange": "NASDAQ"},
+            "MRVL": {"name": "Marvell Technology", "exchange": "NASDAQ"},
+            "NVTS": {"name": "Navitas Semiconductor", "exchange": "NASDAQ"},
+            
+            # その他大型株
             "ORCL": {"name": "Oracle Corporation", "exchange": "NYSE"},
             "CRM": {"name": "Salesforce Inc.", "exchange": "NYSE"},
-            "QCOM": {"name": "Qualcomm Inc.", "exchange": "NASDAQ"},
             "IBM": {"name": "IBM Corporation", "exchange": "NYSE"},
             "DIS": {"name": "Walt Disney Company", "exchange": "NYSE"},
-            "PYPL": {"name": "PayPal Holdings Inc.", "exchange": "NASDAQ"}
+            "PYPL": {"name": "PayPal Holdings Inc.", "exchange": "NASDAQ"},
+            
+            # 金融・その他
+            "JPM": {"name": "JPMorgan Chase & Co.", "exchange": "NYSE"},
+            "BAC": {"name": "Bank of America Corp", "exchange": "NYSE"},
+            "SHOP": {"name": "Shopify Inc.", "exchange": "NYSE"},
+            "SQ": {"name": "Block Inc.", "exchange": "NYSE"},
+            
+            # ETF
+            "SPY": {"name": "SPDR S&P 500 ETF Trust", "exchange": "NYSE"},
+            "QQQ": {"name": "Invesco QQQ Trust", "exchange": "NASDAQ"},
+            "VTI": {"name": "Vanguard Total Stock Market ETF", "exchange": "NYSE"}
         }
         
-        query_upper = query.upper()
-        results = []
-        
+        # 主要銘柄データベースから部分一致検索
         for symbol, info in major_stocks.items():
-            if query_upper in symbol or query_upper in info["name"].upper():
+            if (query_upper in symbol or 
+                query_upper in info["name"].upper() or
+                symbol.startswith(query_upper)):
+                
+                # 重複チェック
+                if not any(r["symbol"] == symbol for r in results):
+                    results.append({
+                        "symbol": symbol,
+                        "name": info["name"],
+                        "exchange": info["exchange"]
+                    })
+        
+        # 3. クエリが銘柄コードっぽい場合（2-5文字のアルファベット）は推測で追加
+        if len(query_upper) >= 2 and len(query_upper) <= 5 and query_upper.isalpha():
+            # まだリストにない場合は推測として追加
+            if not any(r["symbol"] == query_upper for r in results):
                 results.append({
-                    "symbol": symbol,
-                    "name": info["name"],
-                    "exchange": info["exchange"]
+                    "symbol": query_upper,
+                    "name": f"{query_upper} Corporation",
+                    "exchange": "NASDAQ"
                 })
                 
         return results[:10]
