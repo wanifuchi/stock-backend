@@ -8,10 +8,12 @@ import yfinance as yf
 import requests
 import random
 import os
+import json
 from typing import Dict, List, Optional, Any
 from datetime import datetime, timedelta
 import time
 from dotenv import load_dotenv
+from pathlib import Path
 
 load_dotenv()
 
@@ -30,6 +32,24 @@ app.add_middleware(
 # APIキー
 FINNHUB_API_KEY = os.getenv("FINNHUB_API_KEY", "")
 ALPHA_VANTAGE_API_KEY = os.getenv("ALPHA_VANTAGE_API_KEY", "demo")
+
+# データローダー関数
+def load_json_data(filename: str) -> Dict:
+    """JSONデータファイルを安全に読み込む"""
+    try:
+        data_path = Path(__file__).parent / "data" / filename
+        with open(data_path, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        print(f"Warning: {filename} not found, using empty data")
+        return {}
+    except json.JSONDecodeError as e:
+        print(f"Warning: Invalid JSON in {filename}: {e}")
+        return {}
+
+# データ初期化
+REALISTIC_PRICES = load_json_data("realistic_prices.json")
+MAJOR_STOCKS = load_json_data("major_stocks.json")
 
 class RealStockService:
     def __init__(self):
@@ -81,53 +101,7 @@ class RealStockService:
         if self._is_cache_valid(symbol):
             return self.cache[symbol]['data']
         
-        # 現実的な価格データベース（2025年7月3日基準 - 実際の市場価格に基づく）
-        realistic_prices = {
-            # テック大型株（実際の2025年7月価格）
-            "NVDA": {"price": 155.30, "name": "NVIDIA Corporation", "change": 3.95},
-            "AAPL": {"price": 193.25, "name": "Apple Inc.", "change": -1.15},
-            "MSFT": {"price": 448.35, "name": "Microsoft Corporation", "change": 2.78},
-            "GOOGL": {"price": 180.45, "name": "Alphabet Inc.", "change": -0.89},
-            "AMZN": {"price": 189.67, "name": "Amazon.com Inc.", "change": 4.23},
-            "META": {"price": 498.12, "name": "Meta Platforms Inc.", "change": -2.34},
-            "TSLA": {"price": 251.52, "name": "Tesla Inc.", "change": 6.78},
-            "AMD": {"price": 158.90, "name": "Advanced Micro Devices", "change": 2.45},
-            "INTC": {"price": 33.85, "name": "Intel Corporation", "change": -0.23},
-            "NFLX": {"price": 638.45, "name": "Netflix Inc.", "change": 8.90},
-            
-            # 半導体・テック銘柄
-            "NVTS": {"price": 8.45, "name": "Navitas Semiconductor", "change": 0.35},
-            "TSM": {"price": 172.45, "name": "Taiwan Semiconductor", "change": 2.15},
-            "MU": {"price": 118.90, "name": "Micron Technology", "change": -1.23},
-            "AVGO": {"price": 1789.45, "name": "Broadcom Inc.", "change": 15.67},
-            "QCOM": {"price": 212.34, "name": "Qualcomm Inc.", "change": 3.45},
-            
-            # 主要ETF（実際の2025年7月価格）
-            "SPY": {"price": 450.25, "name": "SPDR S&P 500 ETF Trust", "change": 2.15},
-            "QQQ": {"price": 380.45, "name": "Invesco QQQ Trust", "change": 1.85},
-            "DIA": {"price": 420.78, "name": "SPDR Dow Jones Industrial Average ETF", "change": 0.95},
-            "IWM": {"price": 198.65, "name": "iShares Russell 2000 ETF", "change": -0.45},
-            "VTI": {"price": 245.30, "name": "Vanguard Total Stock Market ETF", "change": 1.25},
-            "VOO": {"price": 415.90, "name": "Vanguard S&P 500 ETF", "change": 2.05},
-            
-            # レバレッジETF（高ボラティリティ）
-            "SOXL": {"price": 26.05, "name": "Direxion Daily Semiconductor Bull 3X Shares", "change": 1.34},
-            "TQQQ": {"price": 65.78, "name": "ProShares UltraPro QQQ", "change": 2.45},
-            "SPXL": {"price": 145.23, "name": "Direxion Daily S&P 500 Bull 3X Shares", "change": 3.67},
-            
-            # セクターETF
-            "XLK": {"price": 198.45, "name": "Technology Select Sector SPDR Fund", "change": 1.23},
-            "XLF": {"price": 39.85, "name": "Financial Select Sector SPDR Fund", "change": 0.67},
-            "XLE": {"price": 89.34, "name": "Energy Select Sector SPDR Fund", "change": -0.89},
-            
-            # 商品ETF
-            "GLD": {"price": 189.67, "name": "SPDR Gold Shares", "change": 0.45},
-            "SLV": {"price": 23.78, "name": "iShares Silver Trust", "change": -0.12},
-            
-            # 債券ETF
-            "TLT": {"price": 97.85, "name": "iShares 20+ Year Treasury Bond ETF", "change": -0.34},
-            "AGG": {"price": 105.23, "name": "iShares Core U.S. Aggregate Bond ETF", "change": 0.08}
-        }
+        # JSONから現実的な価格データベースを取得
             
         # 1. Alpha Vantage API（最優先 - 信頼性が高い）
         if ALPHA_VANTAGE_API_KEY and ALPHA_VANTAGE_API_KEY != "demo":
@@ -271,8 +245,8 @@ class RealStockService:
         
         # 3. フォールバック: 現実的なデータ（主要銘柄）
         symbol_upper = symbol.upper()
-        if symbol_upper in realistic_prices:
-            stock_info = realistic_prices[symbol_upper]
+        if symbol_upper in REALISTIC_PRICES:
+            stock_info = REALISTIC_PRICES[symbol_upper]
             current_price = stock_info["price"]
             change = stock_info["change"]
             change_percent = round((change / current_price) * 100, 2)
@@ -428,139 +402,12 @@ class RealStockService:
             except Exception as e:
                 print(f"yfinance search error for {query_upper}: {str(e)}")
         
-        # 2. 拡張された主要銘柄データベースから検索
-        major_stocks = {
-            # 大型テック株
-            "NVDA": {"name": "NVIDIA Corporation", "exchange": "NASDAQ"},
-            "AAPL": {"name": "Apple Inc.", "exchange": "NASDAQ"},
-            "MSFT": {"name": "Microsoft Corporation", "exchange": "NASDAQ"},
-            "GOOGL": {"name": "Alphabet Inc.", "exchange": "NASDAQ"},
-            "GOOG": {"name": "Alphabet Inc. Class C", "exchange": "NASDAQ"},
-            "AMZN": {"name": "Amazon.com Inc.", "exchange": "NASDAQ"},
-            "META": {"name": "Meta Platforms Inc.", "exchange": "NASDAQ"},
-            "TSLA": {"name": "Tesla Inc.", "exchange": "NASDAQ"},
-            "AMD": {"name": "Advanced Micro Devices", "exchange": "NASDAQ"},
-            "INTC": {"name": "Intel Corporation", "exchange": "NASDAQ"},
-            "NFLX": {"name": "Netflix Inc.", "exchange": "NASDAQ"},
-            
-            # 半導体関連
-            "TSM": {"name": "Taiwan Semiconductor", "exchange": "NYSE"},
-            "AVGO": {"name": "Broadcom Inc.", "exchange": "NASDAQ"},
-            "QCOM": {"name": "Qualcomm Inc.", "exchange": "NASDAQ"},
-            "MU": {"name": "Micron Technology", "exchange": "NASDAQ"},
-            "MRVL": {"name": "Marvell Technology", "exchange": "NASDAQ"},
-            "NVTS": {"name": "Navitas Semiconductor", "exchange": "NASDAQ"},
-            
-            # その他大型株
-            "ORCL": {"name": "Oracle Corporation", "exchange": "NYSE"},
-            "CRM": {"name": "Salesforce Inc.", "exchange": "NYSE"},
-            "IBM": {"name": "IBM Corporation", "exchange": "NYSE"},
-            "DIS": {"name": "Walt Disney Company", "exchange": "NYSE"},
-            "PYPL": {"name": "PayPal Holdings Inc.", "exchange": "NASDAQ"},
-            
-            # 石油・エネルギー関連
-            "EC": {"name": "Ecopetrol S.A.", "exchange": "NYSE"},
-            "EBAY": {"name": "eBay Inc.", "exchange": "NASDAQ"},
-            "ETSY": {"name": "Etsy Inc.", "exchange": "NASDAQ"},
-            
-            # 金融・その他
-            "JPM": {"name": "JPMorgan Chase & Co.", "exchange": "NYSE"},
-            "BAC": {"name": "Bank of America Corp", "exchange": "NYSE"},
-            "SHOP": {"name": "Shopify Inc.", "exchange": "NYSE"},
-            "SQ": {"name": "Block Inc.", "exchange": "NYSE"},
-            
-            # ダウ工業株30種構成銘柄（2025年7月現在）
-            "MMM": {"name": "3M Company", "exchange": "NYSE"},
-            "AXP": {"name": "American Express Company", "exchange": "NYSE"},
-            "AMGN": {"name": "Amgen Inc.", "exchange": "NASDAQ"},
-            "BA": {"name": "Boeing Company", "exchange": "NYSE"},
-            "CAT": {"name": "Caterpillar Inc.", "exchange": "NYSE"},
-            "CVX": {"name": "Chevron Corporation", "exchange": "NYSE"},
-            "CSCO": {"name": "Cisco Systems Inc.", "exchange": "NASDAQ"},
-            "KO": {"name": "Coca-Cola Company", "exchange": "NYSE"},
-            "DOW": {"name": "Dow Inc.", "exchange": "NYSE"},
-            "GS": {"name": "Goldman Sachs Group Inc.", "exchange": "NYSE"},
-            "HD": {"name": "Home Depot Inc.", "exchange": "NYSE"},
-            "HON": {"name": "Honeywell International Inc.", "exchange": "NASDAQ"},
-            "JNJ": {"name": "Johnson & Johnson", "exchange": "NYSE"},
-            "MCD": {"name": "McDonald's Corporation", "exchange": "NYSE"},
-            "MRK": {"name": "Merck & Co. Inc.", "exchange": "NYSE"},
-            "NKE": {"name": "Nike Inc.", "exchange": "NYSE"},
-            "PG": {"name": "Procter & Gamble Company", "exchange": "NYSE"},
-            "RTX": {"name": "RTX Corporation", "exchange": "NYSE"},
-            "TRV": {"name": "Travelers Companies Inc.", "exchange": "NYSE"},
-            "UNH": {"name": "UnitedHealth Group Inc.", "exchange": "NYSE"},
-            "VZ": {"name": "Verizon Communications Inc.", "exchange": "NYSE"},
-            "V": {"name": "Visa Inc.", "exchange": "NYSE"},
-            "WBA": {"name": "Walgreens Boots Alliance Inc.", "exchange": "NASDAQ"},
-            "WMT": {"name": "Walmart Inc.", "exchange": "NYSE"},
-            
-            # ETF - 主要インデックスETF
-            "SPY": {"name": "SPDR S&P 500 ETF Trust", "exchange": "NYSE"},
-            "QQQ": {"name": "Invesco QQQ Trust", "exchange": "NASDAQ"},
-            "DIA": {"name": "SPDR Dow Jones Industrial Average ETF", "exchange": "NYSE"},
-            "IWM": {"name": "iShares Russell 2000 ETF", "exchange": "NYSE"},
-            "VTI": {"name": "Vanguard Total Stock Market ETF", "exchange": "NYSE"},
-            "VOO": {"name": "Vanguard S&P 500 ETF", "exchange": "NYSE"},
-            "IVV": {"name": "iShares Core S&P 500 ETF", "exchange": "NYSE"},
-            
-            # ETF - セクター別
-            "XLK": {"name": "Technology Select Sector SPDR Fund", "exchange": "NYSE"},
-            "XLF": {"name": "Financial Select Sector SPDR Fund", "exchange": "NYSE"},
-            "XLE": {"name": "Energy Select Sector SPDR Fund", "exchange": "NYSE"},
-            "XLV": {"name": "Health Care Select Sector SPDR Fund", "exchange": "NYSE"},
-            "XLI": {"name": "Industrial Select Sector SPDR Fund", "exchange": "NYSE"},
-            "XLY": {"name": "Consumer Discretionary Select SPDR", "exchange": "NYSE"},
-            "XLP": {"name": "Consumer Staples Select Sector SPDR", "exchange": "NYSE"},
-            "XLU": {"name": "Utilities Select Sector SPDR Fund", "exchange": "NYSE"},
-            "XLRE": {"name": "Real Estate Select Sector SPDR Fund", "exchange": "NYSE"},
-            "XLB": {"name": "Materials Select Sector SPDR Fund", "exchange": "NYSE"},
-            "XLC": {"name": "Communication Services Select Sector SPDR", "exchange": "NYSE"},
-            
-            # ETF - 国際市場
-            "EFA": {"name": "iShares MSCI EAFE ETF", "exchange": "NYSE"},
-            "EEM": {"name": "iShares MSCI Emerging Markets ETF", "exchange": "NYSE"},
-            "VEA": {"name": "Vanguard FTSE Developed Markets ETF", "exchange": "NYSE"},
-            "VWO": {"name": "Vanguard FTSE Emerging Markets ETF", "exchange": "NYSE"},
-            "IEFA": {"name": "iShares Core MSCI EAFE ETF", "exchange": "NYSE"},
-            "IEMG": {"name": "iShares Core MSCI Emerging Markets ETF", "exchange": "NYSE"},
-            
-            # ETF - 商品・コモディティ
-            "GLD": {"name": "SPDR Gold Shares", "exchange": "NYSE"},
-            "SLV": {"name": "iShares Silver Trust", "exchange": "NYSE"},
-            "USO": {"name": "United States Oil Fund", "exchange": "NYSE"},
-            "UNG": {"name": "United States Natural Gas Fund", "exchange": "NYSE"},
-            "DBA": {"name": "Invesco DB Agriculture Fund", "exchange": "NYSE"},
-            
-            # ETF - 債券
-            "AGG": {"name": "iShares Core U.S. Aggregate Bond ETF", "exchange": "NYSE"},
-            "BND": {"name": "Vanguard Total Bond Market ETF", "exchange": "NASDAQ"},
-            "TLT": {"name": "iShares 20+ Year Treasury Bond ETF", "exchange": "NASDAQ"},
-            "IEF": {"name": "iShares 7-10 Year Treasury Bond ETF", "exchange": "NASDAQ"},
-            "SHY": {"name": "iShares 1-3 Year Treasury Bond ETF", "exchange": "NASDAQ"},
-            "HYG": {"name": "iShares iBoxx $ High Yield Corporate Bond ETF", "exchange": "NYSE"},
-            "LQD": {"name": "iShares iBoxx $ Investment Grade Corporate Bond ETF", "exchange": "NYSE"},
-            
-            # ETF - REIT
-            "VNQ": {"name": "Vanguard Real Estate ETF", "exchange": "NYSE"},
-            "IYR": {"name": "iShares U.S. Real Estate ETF", "exchange": "NYSE"},
-            "RWR": {"name": "SPDR Dow Jones REIT ETF", "exchange": "NYSE"},
-            
-            # ETF - テーマ型・戦略型
-            "ARKK": {"name": "ARK Innovation ETF", "exchange": "NYSE"},
-            "ARKQ": {"name": "ARK Autonomous Technology & Robotics ETF", "exchange": "NYSE"},
-            "ARKW": {"name": "ARK Next Generation Internet ETF", "exchange": "NYSE"},
-            "ARKG": {"name": "ARK Genomic Revolution ETF", "exchange": "NYSE"},
-            "ICLN": {"name": "iShares Global Clean Energy ETF", "exchange": "NASDAQ"},
-            "TAN": {"name": "Invesco Solar ETF", "exchange": "NYSE"},
-            "SMH": {"name": "VanEck Semiconductor ETF", "exchange": "NASDAQ"},
-            "SOXX": {"name": "iShares Semiconductor ETF", "exchange": "NASDAQ"}
-        }
+        # 2. JSONから主要銘柄データベースを検索
         
         # 関連度スコアリング方式の検索
         scored_results = []
         
-        for symbol, info in major_stocks.items():
+        for symbol, info in MAJOR_STOCKS.items():
             score = 0
             name_upper = info["name"].upper()
             
