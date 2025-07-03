@@ -458,8 +458,8 @@ class RealStockService:
             "DIS": {"name": "Walt Disney Company", "exchange": "NYSE"},
             "PYPL": {"name": "PayPal Holdings Inc.", "exchange": "NASDAQ"},
             
-            # E-commerce & Consumer関連
-            "EC": {"name": "Ecolab Inc.", "exchange": "NYSE"},
+            # 石油・エネルギー関連
+            "EC": {"name": "Ecopetrol S.A.", "exchange": "NYSE"},
             "EBAY": {"name": "eBay Inc.", "exchange": "NASDAQ"},
             "ETSY": {"name": "Etsy Inc.", "exchange": "NASDAQ"},
             
