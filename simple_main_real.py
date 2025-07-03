@@ -41,6 +41,39 @@ class RealStockService:
         if symbol not in self.cache:
             return False
         return time.time() - self.cache[symbol]['timestamp'] < self.cache_timeout
+    
+    def _detect_symbol_type(self, symbol: str) -> str:
+        """銘柄タイプを自動判定"""
+        symbol_upper = symbol.upper()
+        
+        # ETF判定ロジック
+        etf_patterns = [
+            # 末尾がF
+            lambda s: s.endswith('F') and len(s) == 3,
+            # よく知られたETFパターン
+            lambda s: s in ['SPY', 'QQQ', 'DIA', 'IWM', 'VOO', 'VTI', 'GLD', 'SLV'],
+            # 3文字でX, Yで始まる（セクターETF）
+            lambda s: len(s) == 3 and s[0] in ['X', 'Y'],
+            # ARKシリーズ
+            lambda s: s.startswith('ARK'),
+            # iSharesシリーズ（I + 2-3文字）
+            lambda s: s.startswith('I') and len(s) <= 4
+        ]
+        
+        # ミューチュアルファンド判定
+        mf_patterns = [
+            # 5文字でXを含む
+            lambda s: len(s) == 5 and 'X' in s,
+            # 末尾がX
+            lambda s: s.endswith('X') and len(s) >= 4
+        ]
+        
+        if any(pattern(symbol_upper) for pattern in etf_patterns):
+            return 'ETF'
+        elif any(pattern(symbol_upper) for pattern in mf_patterns):
+            return 'MUTUAL_FUND'
+        else:
+            return 'STOCK'
         
     def get_stock_price(self, symbol: str) -> Optional[Dict[str, Any]]:
         """実際の株価を取得（フォールバック機能付き）"""
@@ -180,35 +213,75 @@ class RealStockService:
         # 4. 汎用フォールバック: 任意の銘柄に対して推定データを生成
         # 銘柄コードが有効そうな場合（2-5文字のアルファベット）
         if len(symbol_upper) >= 2 and len(symbol_upper) <= 5 and symbol_upper.isalpha():
-            # 銘柄の特性に基づいた価格レンジを設定
-            if any(tech in symbol_upper for tech in ['NV', 'AI', 'SEMI', 'CHIP']):
-                # 半導体/AI関連株
-                base_price = random.uniform(50, 300)
-            elif any(crypto in symbol_upper for crypto in ['COIN', 'BTC', 'CRYPTO']):
-                # 暗号通貨関連株
-                base_price = random.uniform(100, 500)
-            elif symbol_upper.endswith('F') or 'ETF' in symbol_upper:
-                # ETF
-                base_price = random.uniform(200, 800)
-            else:
-                # 一般株式
-                base_price = random.uniform(20, 200)
+            # 銘柄タイプを判定
+            symbol_type = self._detect_symbol_type(symbol_upper)
             
-            change = random.uniform(-5, 5)
-            change_percent = round((change / base_price) * 100, 2)
+            # 銘柄タイプに応じた価格レンジとボラティリティを設定
+            if symbol_type == 'ETF':
+                # ETFは低ボラティリティ、価格は中程度
+                base_price = random.uniform(50, 500)
+                daily_change_range = (-2, 2)  # ±2%
+                volume_range = (5000000, 50000000)
+                market_cap_range = (10000000000, 500000000000)
+                name_suffix = "ETF"
+            elif symbol_type == 'MUTUAL_FUND':
+                # ミューチュアルファンドは非常に低ボラティリティ
+                base_price = random.uniform(10, 100)
+                daily_change_range = (-1, 1)  # ±1%
+                volume_range = (100000, 1000000)
+                market_cap_range = (1000000000, 50000000000)
+                name_suffix = "Fund"
+            else:
+                # 個別株は高ボラティリティ、価格レンジも広い
+                # 銘柄の特性に基づいた価格レンジを設定
+                if any(tech in symbol_upper for tech in ['NV', 'AI', 'SEMI', 'CHIP']):
+                    # 半導体/AI関連株
+                    base_price = random.uniform(50, 300)
+                    daily_change_range = (-5, 5)  # ±5%
+                elif any(crypto in symbol_upper for crypto in ['COIN', 'BTC', 'CRYPTO']):
+                    # 暗号通貨関連株
+                    base_price = random.uniform(100, 500)
+                    daily_change_range = (-10, 10)  # ±10%
+                elif any(bio in symbol_upper for bio in ['BIO', 'GENE', 'MRNA']):
+                    # バイオテック株
+                    base_price = random.uniform(10, 150)
+                    daily_change_range = (-8, 8)  # ±8%
+                else:
+                    # 一般株式
+                    base_price = random.uniform(20, 200)
+                    daily_change_range = (-3, 3)  # ±3%
+                volume_range = (100000, 10000000)
+                market_cap_range = (1000000000, 100000000000)
+                name_suffix = "Corporation"
+            
+            # 価格変動を計算
+            change_percent = random.uniform(*daily_change_range)
+            change = base_price * (change_percent / 100)
+            
+            # 高値・安値をリアリスティックに設定
+            if change > 0:
+                # 上昇日
+                high = base_price + random.uniform(change * 0.8, change * 1.2)
+                low = base_price - random.uniform(0, change * 0.3)
+                open_price = base_price - random.uniform(0, change * 0.5)
+            else:
+                # 下落日
+                high = base_price + random.uniform(0, abs(change) * 0.3)
+                low = base_price + change - random.uniform(0, abs(change) * 0.2)
+                open_price = base_price + random.uniform(change * 0.5, 0)
             
             data = {
                 "symbol": symbol_upper,
-                "name": f"{symbol_upper} Corporation",
+                "name": f"{symbol_upper} {name_suffix}",
                 "current_price": round(base_price, 2),
                 "change": round(change, 2),
-                "change_percent": change_percent,
-                "high": round(base_price * random.uniform(1.01, 1.05), 2),
-                "low": round(base_price * random.uniform(0.95, 0.99), 2),
-                "open": round(base_price - (change * random.uniform(0.3, 0.7)), 2),
+                "change_percent": round(change_percent, 2),
+                "high": round(high, 2),
+                "low": round(low, 2),
+                "open": round(open_price, 2),
                 "previous_close": round(base_price - change, 2),
-                "volume": random.randint(100000, 10000000),
-                "market_cap": random.randint(1000000000, 100000000000),
+                "volume": random.randint(*volume_range),
+                "market_cap": random.randint(*market_cap_range),
                 "source": "fallback_generated",
                 "timestamp": datetime.now().isoformat()
             }
@@ -300,10 +373,92 @@ class RealStockService:
             "SHOP": {"name": "Shopify Inc.", "exchange": "NYSE"},
             "SQ": {"name": "Block Inc.", "exchange": "NYSE"},
             
-            # ETF
+            # ダウ工業株30種構成銘柄（2025年7月現在）
+            "MMM": {"name": "3M Company", "exchange": "NYSE"},
+            "AXP": {"name": "American Express Company", "exchange": "NYSE"},
+            "AMGN": {"name": "Amgen Inc.", "exchange": "NASDAQ"},
+            "BA": {"name": "Boeing Company", "exchange": "NYSE"},
+            "CAT": {"name": "Caterpillar Inc.", "exchange": "NYSE"},
+            "CVX": {"name": "Chevron Corporation", "exchange": "NYSE"},
+            "CSCO": {"name": "Cisco Systems Inc.", "exchange": "NASDAQ"},
+            "KO": {"name": "Coca-Cola Company", "exchange": "NYSE"},
+            "DOW": {"name": "Dow Inc.", "exchange": "NYSE"},
+            "GS": {"name": "Goldman Sachs Group Inc.", "exchange": "NYSE"},
+            "HD": {"name": "Home Depot Inc.", "exchange": "NYSE"},
+            "HON": {"name": "Honeywell International Inc.", "exchange": "NASDAQ"},
+            "JNJ": {"name": "Johnson & Johnson", "exchange": "NYSE"},
+            "MCD": {"name": "McDonald's Corporation", "exchange": "NYSE"},
+            "MRK": {"name": "Merck & Co. Inc.", "exchange": "NYSE"},
+            "NKE": {"name": "Nike Inc.", "exchange": "NYSE"},
+            "PG": {"name": "Procter & Gamble Company", "exchange": "NYSE"},
+            "RTX": {"name": "RTX Corporation", "exchange": "NYSE"},
+            "TRV": {"name": "Travelers Companies Inc.", "exchange": "NYSE"},
+            "UNH": {"name": "UnitedHealth Group Inc.", "exchange": "NYSE"},
+            "VZ": {"name": "Verizon Communications Inc.", "exchange": "NYSE"},
+            "V": {"name": "Visa Inc.", "exchange": "NYSE"},
+            "WBA": {"name": "Walgreens Boots Alliance Inc.", "exchange": "NASDAQ"},
+            "WMT": {"name": "Walmart Inc.", "exchange": "NYSE"},
+            
+            # ETF - 主要インデックスETF
             "SPY": {"name": "SPDR S&P 500 ETF Trust", "exchange": "NYSE"},
             "QQQ": {"name": "Invesco QQQ Trust", "exchange": "NASDAQ"},
-            "VTI": {"name": "Vanguard Total Stock Market ETF", "exchange": "NYSE"}
+            "DIA": {"name": "SPDR Dow Jones Industrial Average ETF", "exchange": "NYSE"},
+            "IWM": {"name": "iShares Russell 2000 ETF", "exchange": "NYSE"},
+            "VTI": {"name": "Vanguard Total Stock Market ETF", "exchange": "NYSE"},
+            "VOO": {"name": "Vanguard S&P 500 ETF", "exchange": "NYSE"},
+            "IVV": {"name": "iShares Core S&P 500 ETF", "exchange": "NYSE"},
+            
+            # ETF - セクター別
+            "XLK": {"name": "Technology Select Sector SPDR Fund", "exchange": "NYSE"},
+            "XLF": {"name": "Financial Select Sector SPDR Fund", "exchange": "NYSE"},
+            "XLE": {"name": "Energy Select Sector SPDR Fund", "exchange": "NYSE"},
+            "XLV": {"name": "Health Care Select Sector SPDR Fund", "exchange": "NYSE"},
+            "XLI": {"name": "Industrial Select Sector SPDR Fund", "exchange": "NYSE"},
+            "XLY": {"name": "Consumer Discretionary Select SPDR", "exchange": "NYSE"},
+            "XLP": {"name": "Consumer Staples Select Sector SPDR", "exchange": "NYSE"},
+            "XLU": {"name": "Utilities Select Sector SPDR Fund", "exchange": "NYSE"},
+            "XLRE": {"name": "Real Estate Select Sector SPDR Fund", "exchange": "NYSE"},
+            "XLB": {"name": "Materials Select Sector SPDR Fund", "exchange": "NYSE"},
+            "XLC": {"name": "Communication Services Select Sector SPDR", "exchange": "NYSE"},
+            
+            # ETF - 国際市場
+            "EFA": {"name": "iShares MSCI EAFE ETF", "exchange": "NYSE"},
+            "EEM": {"name": "iShares MSCI Emerging Markets ETF", "exchange": "NYSE"},
+            "VEA": {"name": "Vanguard FTSE Developed Markets ETF", "exchange": "NYSE"},
+            "VWO": {"name": "Vanguard FTSE Emerging Markets ETF", "exchange": "NYSE"},
+            "IEFA": {"name": "iShares Core MSCI EAFE ETF", "exchange": "NYSE"},
+            "IEMG": {"name": "iShares Core MSCI Emerging Markets ETF", "exchange": "NYSE"},
+            
+            # ETF - 商品・コモディティ
+            "GLD": {"name": "SPDR Gold Shares", "exchange": "NYSE"},
+            "SLV": {"name": "iShares Silver Trust", "exchange": "NYSE"},
+            "USO": {"name": "United States Oil Fund", "exchange": "NYSE"},
+            "UNG": {"name": "United States Natural Gas Fund", "exchange": "NYSE"},
+            "DBA": {"name": "Invesco DB Agriculture Fund", "exchange": "NYSE"},
+            
+            # ETF - 債券
+            "AGG": {"name": "iShares Core U.S. Aggregate Bond ETF", "exchange": "NYSE"},
+            "BND": {"name": "Vanguard Total Bond Market ETF", "exchange": "NASDAQ"},
+            "TLT": {"name": "iShares 20+ Year Treasury Bond ETF", "exchange": "NASDAQ"},
+            "IEF": {"name": "iShares 7-10 Year Treasury Bond ETF", "exchange": "NASDAQ"},
+            "SHY": {"name": "iShares 1-3 Year Treasury Bond ETF", "exchange": "NASDAQ"},
+            "HYG": {"name": "iShares iBoxx $ High Yield Corporate Bond ETF", "exchange": "NYSE"},
+            "LQD": {"name": "iShares iBoxx $ Investment Grade Corporate Bond ETF", "exchange": "NYSE"},
+            
+            # ETF - REIT
+            "VNQ": {"name": "Vanguard Real Estate ETF", "exchange": "NYSE"},
+            "IYR": {"name": "iShares U.S. Real Estate ETF", "exchange": "NYSE"},
+            "RWR": {"name": "SPDR Dow Jones REIT ETF", "exchange": "NYSE"},
+            
+            # ETF - テーマ型・戦略型
+            "ARKK": {"name": "ARK Innovation ETF", "exchange": "NYSE"},
+            "ARKQ": {"name": "ARK Autonomous Technology & Robotics ETF", "exchange": "NYSE"},
+            "ARKW": {"name": "ARK Next Generation Internet ETF", "exchange": "NYSE"},
+            "ARKG": {"name": "ARK Genomic Revolution ETF", "exchange": "NYSE"},
+            "ICLN": {"name": "iShares Global Clean Energy ETF", "exchange": "NASDAQ"},
+            "TAN": {"name": "Invesco Solar ETF", "exchange": "NYSE"},
+            "SMH": {"name": "VanEck Semiconductor ETF", "exchange": "NASDAQ"},
+            "SOXX": {"name": "iShares Semiconductor ETF", "exchange": "NASDAQ"}
         }
         
         # 主要銘柄データベースから部分一致検索
