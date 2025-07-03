@@ -491,7 +491,16 @@ class RealStockService:
         except Exception as e:
             print(f"History error for {symbol}: {str(e)}")
         
-        # フォールバック: 現在価格から履歴を生成
+        # フォールバック: 強化分析サービスから現実的な価格履歴を生成
+        if HAS_ENHANCED_ANALYSIS:
+            try:
+                print(f"Using enhanced price history for {symbol}")
+                enhanced_history = enhanced_analysis_service.generate_price_history(symbol, period)
+                return enhanced_history
+            except Exception as e:
+                print(f"Enhanced price history failed for {symbol}: {e}")
+        
+        # 最終フォールバック: 現在価格から履歴を生成
         current_data = self.get_stock_price(symbol)
         if current_data:
             current_price = current_data["current_price"]
