@@ -537,6 +537,18 @@ class RealStockService:
 # サービスインスタンス
 real_stock_service = RealStockService()
 
+# 強化された分析サービスを追加
+try:
+    import sys
+    import os
+    sys.path.append(os.path.dirname(__file__))
+    from app.services.enhanced_analysis_service import enhanced_analysis_service
+    HAS_ENHANCED_ANALYSIS = True
+    print("Enhanced analysis service loaded successfully")
+except ImportError as e:
+    print(f"Warning: Enhanced analysis service not available: {e}")
+    HAS_ENHANCED_ANALYSIS = False
+
 @app.get("/")
 def root():
     return {
@@ -592,7 +604,7 @@ def get_price_history(symbol: str, period: str = "1mo"):
 
 @app.get("/api/stocks/{symbol}/indicators")
 def get_technical_indicators(symbol: str):
-    """テクニカル指標（実際の価格から計算）"""
+    """テクニカル指標（実際の価格から計算 + 強化分析）"""
     try:
         # 現在価格を取得
         stock_data = real_stock_service.get_stock_price(symbol)
@@ -600,6 +612,19 @@ def get_technical_indicators(symbol: str):
             raise HTTPException(status_code=404, detail=f"Stock {symbol} not found")
             
         current_price = stock_data["current_price"]
+        
+        # 強化分析サービスが利用可能な場合
+        if HAS_ENHANCED_ANALYSIS:
+            try:
+                # 強化されたテクニカル指標を生成
+                indicators = enhanced_analysis_service.generate_realistic_technical_indicators(
+                    symbol, current_price
+                )
+                return indicators
+            except Exception as e:
+                print(f"Enhanced indicators failed for {symbol}, falling back to simple calculation: {e}")
+        
+        # フォールバック: シンプル計算（従来のロジック）
         
         # 価格履歴を取得
         history = real_stock_service.get_price_history(symbol, "3mo")
@@ -666,13 +691,45 @@ def get_technical_indicators(symbol: str):
 
 @app.get("/api/stocks/{symbol}/analysis")
 def get_stock_analysis(symbol: str):
-    """株式分析（実際の価格ベース）"""
+    """株式分析（実際の価格ベース + 強化分析）"""
     try:
         # 現在価格を取得
         stock_data = real_stock_service.get_stock_price(symbol)
         if not stock_data:
             raise HTTPException(status_code=404, detail=f"Stock {symbol} not found")
-            
+        
+        # 強化分析サービスが利用可能な場合
+        if HAS_ENHANCED_ANALYSIS:
+            try:
+                print(f"Attempting enhanced analysis for {symbol}")
+                # テクニカル指標を生成
+                indicators = enhanced_analysis_service.generate_realistic_technical_indicators(
+                    symbol, stock_data["current_price"]
+                )
+                print(f"Generated indicators for {symbol}: {indicators}")
+                
+                # 高度な分析を実行
+                analysis_result = enhanced_analysis_service.generate_advanced_analysis(
+                    symbol, stock_data, indicators
+                )
+                print(f"Generated analysis for {symbol}: {analysis_result}")
+                
+                return {
+                    "symbol": symbol.upper(),
+                    "analysis": analysis_result["analysis"],
+                    "technical_indicators": indicators,
+                    "timestamp": analysis_result["timestamp"],
+                    "data_source": analysis_result["data_source"]
+                }
+                
+            except Exception as e:
+                print(f"Enhanced analysis failed for {symbol}, falling back to simple analysis: {e}")
+                import traceback
+                traceback.print_exc()
+        else:
+            print(f"Enhanced analysis not available, using simple analysis for {symbol}")
+        
+        # フォールバック: シンプル分析（従来のロジック）
         current_price = stock_data["current_price"]
         change_percent = stock_data.get("change_percent", 0)
         
