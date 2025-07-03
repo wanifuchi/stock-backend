@@ -15,16 +15,51 @@ class EnhancedAnalysisService:
     def __init__(self):
         # 銘柄別の特性データベース
         self.stock_characteristics = {
-            'AAPL': {'volatility': 0.3, 'trend': 'bullish', 'sector': 'tech'},
-            'GOOGL': {'volatility': 0.35, 'trend': 'bullish', 'sector': 'tech'},
-            'MSFT': {'volatility': 0.25, 'trend': 'bullish', 'sector': 'tech'},
-            'AMZN': {'volatility': 0.4, 'trend': 'neutral', 'sector': 'consumer'},
-            'TSLA': {'volatility': 0.6, 'trend': 'volatile', 'sector': 'auto'},
-            'NVDA': {'volatility': 0.5, 'trend': 'bullish', 'sector': 'tech'},
-            'META': {'volatility': 0.45, 'trend': 'recovery', 'sector': 'social'},
-            'JPM': {'volatility': 0.2, 'trend': 'stable', 'sector': 'finance'},
-            'V': {'volatility': 0.15, 'trend': 'stable', 'sector': 'finance'},
-            'JNJ': {'volatility': 0.1, 'trend': 'stable', 'sector': 'pharma'},
+            # 個別株
+            'AAPL': {'volatility': 0.3, 'trend': 'bullish', 'sector': 'tech', 'type': 'stock'},
+            'GOOGL': {'volatility': 0.35, 'trend': 'bullish', 'sector': 'tech', 'type': 'stock'},
+            'MSFT': {'volatility': 0.25, 'trend': 'bullish', 'sector': 'tech', 'type': 'stock'},
+            'AMZN': {'volatility': 0.4, 'trend': 'neutral', 'sector': 'consumer', 'type': 'stock'},
+            'TSLA': {'volatility': 0.6, 'trend': 'volatile', 'sector': 'auto', 'type': 'stock'},
+            'NVDA': {'volatility': 0.5, 'trend': 'bullish', 'sector': 'tech', 'type': 'stock'},
+            'META': {'volatility': 0.45, 'trend': 'recovery', 'sector': 'social', 'type': 'stock'},
+            'JPM': {'volatility': 0.2, 'trend': 'stable', 'sector': 'finance', 'type': 'stock'},
+            'V': {'volatility': 0.15, 'trend': 'stable', 'sector': 'finance', 'type': 'stock'},
+            'JNJ': {'volatility': 0.1, 'trend': 'stable', 'sector': 'pharma', 'type': 'stock'},
+            
+            # レバレッジETF（高ボラティリティ）
+            'SOXL': {'volatility': 1.2, 'trend': 'volatile', 'sector': 'semiconductor', 'type': 'leveraged_etf', 'leverage': 3},
+            'TQQQ': {'volatility': 1.0, 'trend': 'volatile', 'sector': 'tech', 'type': 'leveraged_etf', 'leverage': 3},
+            'SPXL': {'volatility': 0.9, 'trend': 'bullish', 'sector': 'broad_market', 'type': 'leveraged_etf', 'leverage': 3},
+            'TECL': {'volatility': 1.1, 'trend': 'volatile', 'sector': 'tech', 'type': 'leveraged_etf', 'leverage': 3},
+            'UDOW': {'volatility': 0.8, 'trend': 'stable', 'sector': 'blue_chip', 'type': 'leveraged_etf', 'leverage': 3},
+            
+            # 通常ETF（中程度ボラティリティ）
+            'SPY': {'volatility': 0.2, 'trend': 'stable', 'sector': 'broad_market', 'type': 'etf'},
+            'QQQ': {'volatility': 0.35, 'trend': 'bullish', 'sector': 'tech', 'type': 'etf'},
+            'SMH': {'volatility': 0.6, 'trend': 'volatile', 'sector': 'semiconductor', 'type': 'etf'},
+            'XLK': {'volatility': 0.4, 'trend': 'bullish', 'sector': 'tech', 'type': 'etf'},
+        }
+        
+        # セクター特性
+        self.sector_characteristics = {
+            'semiconductor': {
+                'cycle_sensitivity': 'high',
+                'volatility_multiplier': 1.3,
+                'geopolitical_risk': 'high',
+                'supply_chain_risk': 'high'
+            },
+            'tech': {
+                'cycle_sensitivity': 'medium',
+                'volatility_multiplier': 1.1,
+                'geopolitical_risk': 'medium',
+                'regulatory_risk': 'medium'
+            },
+            'broad_market': {
+                'cycle_sensitivity': 'low',
+                'volatility_multiplier': 1.0,
+                'diversification': 'high'
+            }
         }
     
     def _get_symbol_seed(self, symbol: str) -> int:
@@ -36,6 +71,67 @@ class EnhancedAnalysisService:
         date_str = datetime.now().strftime('%Y-%m-%d')
         combined = f"{symbol}_{date_str}"
         return int(hashlib.md5(combined.encode()).hexdigest()[:8], 16)
+    
+    def _detect_leveraged_etf(self, symbol: str) -> dict:
+        """レバレッジETFの自動検出"""
+        symbol_upper = symbol.upper()
+        
+        # 既知のレバレッジETF
+        if symbol_upper in self.stock_characteristics:
+            characteristics = self.stock_characteristics[symbol_upper]
+            if characteristics.get('type') == 'leveraged_etf':
+                return characteristics
+        
+        # パターンマッチングによる検出
+        leveraged_patterns = {
+            'SOXL': {'leverage': 3, 'sector': 'semiconductor', 'volatility': 1.2},
+            'TQQQ': {'leverage': 3, 'sector': 'tech', 'volatility': 1.0},
+            'SPXL': {'leverage': 3, 'sector': 'broad_market', 'volatility': 0.9},
+            'TECL': {'leverage': 3, 'sector': 'tech', 'volatility': 1.1},
+            'UDOW': {'leverage': 3, 'sector': 'blue_chip', 'volatility': 0.8},
+            'UPRO': {'leverage': 3, 'sector': 'broad_market', 'volatility': 0.9},
+            'FNGU': {'leverage': 3, 'sector': 'tech', 'volatility': 1.3},
+        }
+        
+        if symbol_upper in leveraged_patterns:
+            return {
+                'type': 'leveraged_etf',
+                'trend': 'volatile',
+                **leveraged_patterns[symbol_upper]
+            }
+        
+        # 末尾のパターンチェック（L = 3倍ロング、S = 3倍ショート）
+        if symbol_upper.endswith('L') and len(symbol_upper) == 4:
+            return {
+                'type': 'leveraged_etf',
+                'leverage': 3,
+                'volatility': 1.0,
+                'trend': 'volatile',
+                'sector': 'unknown'
+            }
+        
+        return None
+    
+    def _get_sector_risks(self, sector: str) -> list:
+        """セクター特有のリスク要因を取得"""
+        sector_risks = {
+            'semiconductor': [
+                '半導体サイクルの影響',
+                '地政学的リスク（中国・台湾情勢）',
+                'サプライチェーン障害リスク',
+                '設備投資サイクルの変動'
+            ],
+            'tech': [
+                '金利上昇による成長株売り',
+                '規制強化リスク',
+                'ビッグテック集中リスク'
+            ],
+            'broad_market': [
+                'マクロ経済環境の変化',
+                '金融政策の影響'
+            ]
+        }
+        return sector_risks.get(sector, ['市場リスク全般'])
     
     def generate_realistic_stock_info(self, symbol: str, base_price: float = None) -> Dict[str, Any]:
         """現実的な株価情報を生成"""
@@ -153,6 +249,20 @@ class EnhancedAnalysisService:
         macd = indicators.get('macd', {})
         bollinger = indicators.get('bollinger_bands', {})
         
+        # 銘柄特性の取得（レバレッジETF検出含む）
+        characteristics = self.stock_characteristics.get(symbol.upper(), {
+            'volatility': 0.3, 'trend': 'neutral', 'sector': 'unknown', 'type': 'stock'
+        })
+        
+        # レバレッジETFの検出
+        leveraged_info = self._detect_leveraged_etf(symbol)
+        if leveraged_info:
+            characteristics.update(leveraged_info)
+        
+        # セクター特性の取得
+        sector = characteristics.get('sector', 'unknown')
+        sector_info = self.sector_characteristics.get(sector, {})
+        
         # 複数シグナルの分析
         buy_signals = 0
         sell_signals = 0
@@ -216,25 +326,59 @@ class EnhancedAnalysisService:
             recommendation = "HOLD"
             confidence = random.uniform(0.45, 0.55)
         
-        # 価格目標の計算
-        characteristics = self.stock_characteristics.get(symbol, {'volatility': 0.3})
-        volatility = characteristics['volatility']
+        # 価格目標の計算（レバレッジETF対応）
+        volatility = characteristics.get('volatility', 0.3)
+        is_leveraged = characteristics.get('type') == 'leveraged_etf'
+        
+        # レバレッジETFの場合、より短期的な目標価格とより厳格なストップロス
+        if is_leveraged:
+            volatility_multiplier = 1.5  # レバレッジETFは値動きが激しい
+            time_decay_factor = 0.95  # 時間減価を考慮
+        else:
+            volatility_multiplier = 1.0
+            time_decay_factor = 1.0
         
         if recommendation == "BUY":
-            upside_potential = random.uniform(0.05, 0.15) * (confidence / 0.7)
-            target_price = current_price * (1 + upside_potential)
-            stop_loss = current_price * (1 - volatility * 0.3)
+            if is_leveraged:
+                upside_potential = random.uniform(0.03, 0.08) * (confidence / 0.7)  # より短期的な目標
+                target_price = current_price * (1 + upside_potential) * time_decay_factor
+                stop_loss = current_price * (1 - volatility * 0.4)  # より厳格なストップロス
+            else:
+                upside_potential = random.uniform(0.05, 0.15) * (confidence / 0.7)
+                target_price = current_price * (1 + upside_potential)
+                stop_loss = current_price * (1 - volatility * 0.3)
         elif recommendation == "SELL":
-            downside_potential = random.uniform(0.05, 0.12) * (confidence / 0.7)
-            target_price = current_price * (1 - downside_potential)
-            stop_loss = current_price * (1 + volatility * 0.2)
+            if is_leveraged:
+                downside_potential = random.uniform(0.03, 0.08) * (confidence / 0.7)
+                target_price = current_price * (1 - downside_potential) * time_decay_factor
+                stop_loss = current_price * (1 + volatility * 0.3)
+            else:
+                downside_potential = random.uniform(0.05, 0.12) * (confidence / 0.7)
+                target_price = current_price * (1 - downside_potential)
+                stop_loss = current_price * (1 + volatility * 0.2)
         else:
-            target_price = current_price * random.uniform(1.02, 1.08)
-            stop_loss = current_price * random.uniform(0.92, 0.98)
+            if is_leveraged:
+                target_price = current_price * random.uniform(0.98, 1.05)  # より狭い範囲
+                stop_loss = current_price * random.uniform(0.90, 0.96)
+            else:
+                target_price = current_price * random.uniform(1.02, 1.08)
+                stop_loss = current_price * random.uniform(0.92, 0.98)
         
         # 分析サマリーの追加
         reasoning.append(f"総合判定: {buy_signals}個の買いシグナル, {sell_signals}個の売りシグナル")
         
+        # レバレッジETF特有の警告
+        if characteristics.get('type') == 'leveraged_etf':
+            leverage = characteristics.get('leverage', 3)
+            reasoning.append(f"⚠️ {leverage}倍レバレッジETF：高ボラティリティ商品")
+            reasoning.append("⚠️ 長期保有は時間減価リスクあり（デイトレード向け）")
+            
+            # セクター特有のリスク
+            sector_risks = self._get_sector_risks(sector)
+            if sector_risks:
+                reasoning.append(f"セクターリスク: {sector_risks[0]}")
+        
+        # 信頼度による補足
         if confidence > 0.75:
             reasoning.append("高信頼度の分析結果（複数指標が一致）")
         elif confidence < 0.5:
